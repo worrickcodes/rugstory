@@ -1,0 +1,108 @@
+[
+  { "type": "image", "fieldName": "p01image", "src": "story_images/front.png" },
+  {
+    "type": "image",
+    "fieldName": "p06image",
+    "src": "story_images/ito-tibetan-design-photorealistic.jpg"
+  },
+  {
+    "type": "image",
+    "fieldName": "p07image",
+    "src": "story_images/designer.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p08image",
+    "src": "story_images/dyeing.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p09image",
+    "src": "story_images/dyeing-machine.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p10image",
+    "src": "story_images/loom-preparation.jpg"
+  },
+  {
+    "type": "image",
+    "fieldName": "p11image",
+    "src": "story_images/wool-preparation.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p12image",
+    "src": "story_images/artisans.png"
+  },
+  {
+    "type": "profiles",
+    "fieldName": "p13image",
+    "templateUrl": "./Weavers.pdf",
+    "profiles": [
+      {
+        "name": "Yadav Sunuwar",
+        "role": "Master",
+        "description": "Yadav Sunuwar is a master craftsman who leads the entire rug-making process with years of expertise and precision. He carefully oversees design execution, guides the weavers, and ensures each rug meets the highest standards of quality and craftsmanship.",
+        "src": "story_images/yadav-sunuwar-master.jpg"
+      },
+      {
+        "name": "Urmila Moktan",
+        "role": "Weaver",
+        "description": "Urmila Moktan is a skilled weaver who brings intricate patterns to life through careful hand-knotting techniques. Her patience and attention to detail ensures every rug carries beauty, balance, and durability.",
+        "src": "story_images/urmila-moktan.jpg"
+      },
+      {
+        "name": "Satyaman Moktan",
+        "role": "Weaver",
+        "description": "Satyaman Moktan is an experienced weaver dedicated to maintaining traditional rug-making techniques. His steady craftsmanship and consistency contribute to the strength and fine detailing of each piece.",
+        "src": "story_images/satyaman-moktan.jpg"
+      },
+      {
+        "name": "Jamjna Lama",
+        "role": "Weaver",
+        "description": "Jamjna Lama is a passionate weaver who transforms delicate designs into textured works of art on the loom. His deep commitment to precision and quality helps preserve the timeless authenticity of handmade rugs.",
+        "src": "story_images/jamjna-lama.jpg"
+      }
+    ]
+  },
+  {
+    "type": "image",
+    "fieldName": "p15image",
+    "src": "story_images/using-tools-2.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p16image",
+    "src": "story_images/loom-off.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p17image",
+    "src": "story_images/pre-carving.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p18image",
+    "src": "story_images/washing.png"
+  },
+  {
+    "type": "image",
+    "fieldName": "p19image",
+    "src": "story_images/stretching.png"
+  },
+  { "type": "text", "fieldName": "p22knots", "value": "120" },
+  { "type": "text", "fieldName": "p22dqys", "value": "45" },
+  { "type": "text", "fieldName": "p22weavers", "value": "3" },
+  { "type": "text", "fieldName": "p22weight", "value": "25 kg" },
+  {
+    "type": "image",
+    "fieldName": "p23image",
+    "src": "story_images/folded-images-2.jpg"
+  },
+  {
+    "type": "image",
+    "fieldName": "p24image",
+    "src": "story_images/back.png"
+  }
+]
