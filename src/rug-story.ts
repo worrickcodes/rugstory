@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { PDFDocument, PDFName, PDFArray, PDFPage, PDFForm } from "pdf-lib";
+import { PDFDocument, PDFName, PDFArray, PDFPage, PDFForm, StandardFonts, rgb } from "pdf-lib";
 import type { PDFTextField } from "pdf-lib";
 import dynamicFields from "./rugstorydynamicinfo.json";
 
@@ -30,8 +30,19 @@ export interface Weavemasters {
   profiles: Profile[];
 }
 
-export type FieldEntry = TextEntry | ImageEntry | Weavemasters;
+export interface Material {
+  color: string;
+  name: string;
+  kg: string;
+}
 
+export interface MaterialsEntry {
+  type: "materials";
+  fieldName: string;
+  materials: Material[];
+}
+
+export type FieldEntry = TextEntry | ImageEntry | Weavemasters | MaterialsEntry;
 const TEMPLATE_URL = "./rugstorytemplate1.pdf";
 
 @customElement("rug-story")
@@ -41,12 +52,12 @@ export class RugStory extends LitElement {
   @state()
   private _pdfObjectUrl = "";
 
-  override connectedCallback() {
+  connectedCallback() {
     super.connectedCallback();
     this.generateRugStory();
   }
 
-  override disconnectedCallback() {
+  disconnectedCallback() {
     super.disconnectedCallback();
     this._revoke();
   }
@@ -73,12 +84,13 @@ export class RugStory extends LitElement {
             await this._fillImageField(pdfDoc, form, pages, entry);
           } else if (entry.type === "profiles") {
             await this._fillProfilesField(pdfDoc, form, pages, entry);
+          } else if (entry.type === "materials") {
+            await this._fillMaterialsField(pdfDoc, form, pages, entry);
           }
         } catch (fieldErr) {
           console.error(`Failed to process field "${(entry as { fieldName: string }).fieldName}":`, fieldErr);
         }
       }
-
       const finalBytes = await pdfDoc.save();
       const blob = new Blob([finalBytes.buffer as ArrayBuffer], { type: "application/pdf" });
       this._pdfObjectUrl = URL.createObjectURL(blob);
@@ -139,6 +151,106 @@ export class RugStory extends LitElement {
         width: wpWidth * scale,
         height: wpHeight * scale,
       });
+    }
+  }
+
+  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry) {
+    const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
+    this._removeField(pdfDoc, form, field, page);
+
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Find the largest swatch size that fits, starting from default
+    const defaultSwatch = 57;
+    const colGap = 8;
+    const rowGap = 10;
+    const count = entry.materials.length;
+
+    let swatchSize = defaultSwatch;
+    let cols = 1;
+
+    // Try default size first; if it doesn't fit, find the largest that does
+    for (let c = count; c >= 1; c--) {
+      const rows = Math.ceil(count / c);
+      const fitW = (rect.width - (c - 1) * colGap) / c;
+      const fitH = (rect.height - (rows - 1) * rowGap) / rows;
+      const size = Math.min(fitW, fitH);
+
+      if (size >= defaultSwatch) {
+        swatchSize = defaultSwatch;
+        cols = c;
+        break;
+      }
+      if (size > swatchSize || swatchSize === defaultSwatch) {
+        swatchSize = size;
+        cols = c;
+      }
+    }
+
+    // Scale text proportionally to swatch size
+    const scale = swatchSize / defaultSwatch;
+    const kgFontSize = 9 * scale;
+    const nameFontSize = 8 * scale;
+    const padding = 5.5 * scale;
+
+    for (let i = 0; i < entry.materials.length; i++) {
+      const mat = entry.materials[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = rect.x + col * (swatchSize + colGap);
+      const y = rect.y + rect.height - (row + 1) * swatchSize - row * rowGap;
+      const { r, g, b } = this._parseColor(mat.color);
+
+      page.drawRectangle({ x, y, width: swatchSize, height: swatchSize, color: rgb(r, g, b) });
+
+      const brightness = r * 0.299 + g * 0.587 + b * 0.114;
+      const textColor = brightness > 0.5 ? rgb(0, 0, 0) : rgb(1, 1, 1);
+
+      const kgText = `${mat.kg} Kg`;
+      const kgTextWidth = font.widthOfTextAtSize(kgText, kgFontSize);
+      page.drawText(kgText, {
+        x: x + swatchSize - padding - kgTextWidth,
+        y: y + swatchSize - padding - kgFontSize,
+        size: kgFontSize,
+        font,
+        color: textColor,
+      });
+
+      // Available height for name: from bottom padding to just below kg text
+      const nameAreaH = swatchSize * 0.5 - padding;
+      let nfs = nameFontSize;
+      let nlh = nfs + 2 * scale;
+      let nameLines: string[] = [];
+
+      // Shrink font until all wrapped lines fit in the available area
+      while (nfs >= 4 * scale) {
+        nameLines = [];
+        const words = mat.name.split(" ");
+        let cur = words[0];
+        for (let w = 1; w < words.length; w++) {
+          const test = cur + " " + words[w];
+          if (font.widthOfTextAtSize(test, nfs) <= swatchSize - padding * 2) {
+            cur = test;
+          } else {
+            nameLines.push(cur);
+            cur = words[w];
+          }
+        }
+        nameLines.push(cur);
+        nlh = nfs + 2 * scale;
+        if (nameLines.length * nlh <= nameAreaH) break;
+        nfs -= 0.5;
+      }
+
+      for (let l = 0; l < nameLines.length; l++) {
+        page.drawText(nameLines[l], {
+          x: x + padding,
+          y: y + padding + (nameLines.length - 1 - l) * nlh,
+          size: nfs,
+          font,
+          color: textColor,
+        });
+      }
     }
   }
 
@@ -203,6 +315,23 @@ export class RugStory extends LitElement {
       if (ref) page.node.removeAnnot(ref);
     });
     form.acroForm.removeField(field.acroField);
+  }
+
+  private _parseColor(color: string): { r: number; g: number; b: number } {
+    const rgbMatch = color.match(/R(\d+)\s*G(\d+)\s*B(\d+)/i);
+    if (rgbMatch) {
+      return {
+        r: parseInt(rgbMatch[1], 10) / 255,
+        g: parseInt(rgbMatch[2], 10) / 255,
+        b: parseInt(rgbMatch[3], 10) / 255,
+      };
+    }
+    const hex = color.replace("#", "");
+    return {
+      r: parseInt(hex.substring(0, 2), 16) / 255,
+      g: parseInt(hex.substring(2, 4), 16) / 255,
+      b: parseInt(hex.substring(4, 6), 16) / 255,
+    };
   }
 
   private _fitImageInRect(imgWidth: number, imgHeight: number, rect: { x: number; y: number; width: number; height: number }) {
