@@ -1,7 +1,8 @@
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { PDFDocument, PDFName, PDFArray, PDFPage, PDFForm, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFName, PDFArray, PDFPage, PDFForm, rgb } from "pdf-lib";
 import type { PDFTextField } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import dynamicFields from "./rugstorydynamicinfo.json";
 
 export interface TextEntry {
@@ -33,6 +34,7 @@ export interface Weavemasters {
 export interface Material {
   color: string;
   name: string;
+  material: string;
   kg: string;
 }
 
@@ -44,6 +46,8 @@ export interface MaterialsEntry {
 
 export type FieldEntry = TextEntry | ImageEntry | Weavemasters | MaterialsEntry;
 const TEMPLATE_URL = "./rugstorytemplate1.pdf";
+const FONT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Regular.ttf";
+const FONT_LIGHT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Light.ttf";
 
 @customElement("rug-story")
 export class RugStory extends LitElement {
@@ -71,21 +75,41 @@ export class RugStory extends LitElement {
     this._revoke();
 
     try {
-      const templateBytes = await fetch(TEMPLATE_URL).then((r) => r.arrayBuffer());
+      // Prefetch all resources in parallel
+      const fetchUrls: string[] = [TEMPLATE_URL, FONT_URL, FONT_LIGHT_URL];
+      for (const entry of this.fields) {
+        if (entry.type === "image") fetchUrls.push(entry.src);
+        if (entry.type === "profiles") {
+          fetchUrls.push(entry.templateUrl);
+          entry.profiles.forEach((p) => fetchUrls.push(p.src));
+        }
+      }
+      const fetched = new Map<string, ArrayBuffer>();
+      await Promise.all(
+        fetchUrls.map((url) =>
+          fetch(url)
+            .then((r) => r.arrayBuffer())
+            .then((buf) => fetched.set(url, buf)),
+        ),
+      );
+
+      const templateBytes = fetched.get(TEMPLATE_URL)!;
       const pdfDoc = await PDFDocument.load(templateBytes);
+      pdfDoc.registerFontkit(fontkit);
+      const font = await pdfDoc.embedFont(fetched.get(FONT_URL)!);
       const form = pdfDoc.getForm();
       const pages = pdfDoc.getPages();
 
       for (const entry of this.fields) {
         try {
           if (entry.type === "text") {
-            this._fillTextField(form, entry);
+            this._fillTextField(form, entry, font);
           } else if (entry.type === "image") {
-            await this._fillImageField(pdfDoc, form, pages, entry);
+            await this._fillImageField(pdfDoc, form, pages, entry, fetched.get(entry.src)!);
           } else if (entry.type === "profiles") {
-            await this._fillProfilesField(pdfDoc, form, pages, entry);
+            await this._fillProfilesField(pdfDoc, form, pages, entry, fetched);
           } else if (entry.type === "materials") {
-            await this._fillMaterialsField(pdfDoc, form, pages, entry);
+            await this._fillMaterialsField(pdfDoc, form, pages, entry, font);
           }
         } catch (fieldErr) {
           console.error(`Failed to process field "${(entry as { fieldName: string }).fieldName}":`, fieldErr);
@@ -100,14 +124,19 @@ export class RugStory extends LitElement {
   }
 
   // ── Field handlers
-  private _fillTextField(form: PDFForm, entry: TextEntry) {
-    form.getTextField(entry.fieldName).setText(entry.value);
+  private _fillTextField(form: PDFForm, entry: TextEntry, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
+    const field = form.getTextField(entry.fieldName);
+    field.acroField.setDefaultAppearance(`${(46 / 255).toFixed(4)} ${(46 / 255).toFixed(4)} ${(45 / 255).toFixed(4)} rg /Helv 0 Tf`);
+    field.setText(entry.value);
+    field.updateAppearances(font);
   }
 
-  private async _fillImageField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: ImageEntry) {
+  private async _fillImageField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: ImageEntry, imgBytes: ArrayBuffer) {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
 
-    const embedded = await this._embedImage(pdfDoc, entry.src);
+    const bytes = new Uint8Array(imgBytes);
+    const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const embedded = isJpg ? await pdfDoc.embedJpg(bytes) : await pdfDoc.embedPng(bytes);
     this._removeField(pdfDoc, form, field, page);
 
     page.drawImage(embedded, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
@@ -122,14 +151,12 @@ export class RugStory extends LitElement {
     }
   }
 
-  private async _fillProfilesField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: Weavemasters) {
+  private async _fillProfilesField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: Weavemasters, fetched: Map<string, ArrayBuffer>) {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
     this._removeField(pdfDoc, form, field, page);
 
-    const weaverBytes = await fetch(entry.templateUrl).then((r) => r.arrayBuffer());
-    const imageDataList = await Promise.all(
-      entry.profiles.map((p) => fetch(p.src).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b))),
-    );
+    const weaverBytes = fetched.get(entry.templateUrl)!;
+    const imageDataList = entry.profiles.map((p) => new Uint8Array(fetched.get(p.src)!));
 
     const cardBounds = { x: 50, y: 420, width: 325, height: 80 };
     const sampleDoc = await PDFDocument.load(weaverBytes);
@@ -139,10 +166,13 @@ export class RugStory extends LitElement {
     const scaledCardH = cardBounds.height * scale;
     const gap = 4;
 
-    for (let i = 0; i < entry.profiles.length; i++) {
-      const filledPage = await this.generateWeavemasterPage(weaverBytes, entry.profiles[i], imageDataList[i]);
+    // Generate all weavemaster pages in parallel
+    const filledPages = await Promise.all(
+      entry.profiles.map((p, i) => this.generateWeavemasterPage(weaverBytes, p, imageDataList[i], fetched.get(FONT_URL)!, fetched.get(FONT_LIGHT_URL)!)),
+    );
 
-      const [embeddedPage] = await pdfDoc.embedPdf(filledPage, [0]);
+    for (let i = 0; i < filledPages.length; i++) {
+      const [embeddedPage] = await pdfDoc.embedPdf(filledPages[i], [0]);
 
       const cardY = rect.y + rect.height - (i + 1) * (scaledCardH + gap) + gap;
       page.drawPage(embeddedPage, {
@@ -154,11 +184,9 @@ export class RugStory extends LitElement {
     }
   }
 
-  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry) {
+  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
     this._removeField(pdfDoc, form, field, page);
-
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
     // Find the largest swatch size that fits, starting from default
     const defaultSwatch = 57;
@@ -187,11 +215,32 @@ export class RugStory extends LitElement {
       }
     }
 
-    // Scale text proportionally to swatch size
     const scale = swatchSize / defaultSwatch;
-    const kgFontSize = 9 * scale;
-    const nameFontSize = 8 * scale;
-    const padding = 5.5 * scale;
+    const kgFontSize = Math.ceil(8 * scale);
+    const nameFontSize = Math.ceil(7 * scale);
+    const padding = 3 * scale;
+    const kgRightPadding = padding * 1.75;
+    const kgTopOffset = 1;
+    const brightnessThreshold = 0.8;
+    const maxNameLines = 2;
+    const nameMaxWidth = swatchSize - padding - 1;
+
+    const wrapText = (text: string, fontSize: number) => {
+      const lines: string[] = [];
+      const words = text.split(" ");
+      let cur = words[0];
+      for (let w = 1; w < words.length; w++) {
+        const test = cur + " " + words[w];
+        if (font.widthOfTextAtSize(test, fontSize) <= nameMaxWidth) {
+          cur = test;
+        } else {
+          lines.push(cur);
+          cur = words[w];
+        }
+      }
+      lines.push(cur);
+      return lines;
+    };
 
     for (let i = 0; i < entry.materials.length; i++) {
       const mat = entry.materials[i];
@@ -204,48 +253,42 @@ export class RugStory extends LitElement {
       page.drawRectangle({ x, y, width: swatchSize, height: swatchSize, color: rgb(r, g, b) });
 
       const brightness = r * 0.299 + g * 0.587 + b * 0.114;
-      const textColor = brightness > 0.5 ? rgb(0, 0, 0) : rgb(1, 1, 1);
+      const textColor = brightness > brightnessThreshold ? rgb(46 / 255, 46 / 255, 45 / 255) : rgb(1, 1, 1);
 
+      // Kg text — top right
       const kgText = `${mat.kg} Kg`;
       const kgTextWidth = font.widthOfTextAtSize(kgText, kgFontSize);
       page.drawText(kgText, {
-        x: x + swatchSize - padding - kgTextWidth,
-        y: y + swatchSize - padding - kgFontSize,
+        x: x + swatchSize - kgRightPadding - kgTextWidth,
+        y: y + swatchSize - kgTopOffset - kgFontSize,
         size: kgFontSize,
         font,
         color: textColor,
       });
 
-      // Available height for name: from bottom padding to just below kg text
-      const nameAreaH = swatchSize * 0.5 - padding;
-      let nfs = nameFontSize;
-      let nlh = nfs + 2 * scale;
-      let nameLines: string[] = [];
+      // Material type — bottom left
+      page.drawText(mat.material, {
+        x: x + padding,
+        y: y + padding,
+        size: nameFontSize,
+        font,
+        color: textColor,
+      });
 
-      // Shrink font until all wrapped lines fit in the available area
-      while (nfs >= 4 * scale) {
-        nameLines = [];
-        const words = mat.name.split(" ");
-        let cur = words[0];
-        for (let w = 1; w < words.length; w++) {
-          const test = cur + " " + words[w];
-          if (font.widthOfTextAtSize(test, nfs) <= swatchSize - padding * 2) {
-            cur = test;
-          } else {
-            nameLines.push(cur);
-            cur = words[w];
-          }
-        }
-        nameLines.push(cur);
-        nlh = nfs + 2 * scale;
-        if (nameLines.length * nlh <= nameAreaH) break;
+      // Color name — above material, shrinks only if >2 lines
+      const nameBottomY = y + padding + nameFontSize;
+      let nfs = nameFontSize;
+      let nameLines = wrapText(mat.name, nfs);
+      while (nameLines.length > maxNameLines && nfs >= 4 * scale) {
         nfs -= 0.5;
+        nameLines = wrapText(mat.name, nfs);
       }
+      const nlh = nfs + 2 * scale;
 
       for (let l = 0; l < nameLines.length; l++) {
         page.drawText(nameLines[l], {
           x: x + padding,
-          y: y + padding + (nameLines.length - 1 - l) * nlh,
+          y: nameBottomY + (nameLines.length - 1 - l) * nlh,
           size: nfs,
           font,
           color: textColor,
@@ -254,20 +297,55 @@ export class RugStory extends LitElement {
     }
   }
 
-  private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array) {
+  private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer) {
     const doc = await PDFDocument.load(templateBytes);
+    doc.registerFontkit(fontkit);
+    const wmFont = await doc.embedFont(fontBytes);
+    const wmThinFont = await doc.embedFont(thinFontBytes);
     const form = doc.getForm();
 
-    form.getTextField("Name").setText(`${profile.name} (${profile.role})`);
+    const darkColor = rgb(46 / 255, 46 / 255, 45 / 255);
+    const pages = doc.getPages();
+
+    // Name + role: draw manually so role can be smaller
+    const nameField = form.getTextField("Name");
+    const nameWidgets = nameField.acroField.getWidgets();
+    const nameRect = nameWidgets[0].getRectangle();
+    const namePage = this._getWidgetPage(nameWidgets[0], pages);
+    this._removeField(doc, form, nameField, namePage);
+
+    const nameFontSize = 11;
+    const roleFontSize = 7;
+    const nameWidth = wmFont.widthOfTextAtSize(profile.name + " ", nameFontSize);
+    const baselineY = nameRect.y + (nameRect.height - nameFontSize) / 2;
+    namePage.drawText(profile.name, {
+      x: nameRect.x,
+      y: baselineY,
+      size: nameFontSize,
+      font: wmFont,
+      color: darkColor,
+    });
+    namePage.drawText(`(${profile.role})`, {
+      x: nameRect.x + nameWidth,
+      y: baselineY,
+      size: roleFontSize,
+      font: wmThinFont,
+      color: rgb(0, 0, 0),
+    });
+
+    // Description: smaller font
+    const descDA = `${(46 / 255).toFixed(4)} ${(46 / 255).toFixed(4)} ${(45 / 255).toFixed(4)} rg /Helv 6 Tf`;
     const descField = form.getTextField("Description");
+    descField.acroField.setDefaultAppearance(descDA);
+    descField.setFontSize(7);
     descField.enableMultiline();
     descField.setText(profile.description);
+    descField.updateAppearances(wmFont);
 
     const photoField = form.getTextField("Photo");
     const photoWidgets = photoField.acroField.getWidgets();
     if (photoWidgets.length) {
       const photoRect = photoWidgets[0].getRectangle();
-      const pages = doc.getPages();
       const photoPage = this._getWidgetPage(photoWidgets[0], pages);
 
       const isJpg = imgBytes[0] === 0xff && imgBytes[1] === 0xd8;
@@ -295,13 +373,6 @@ export class RugStory extends LitElement {
       rect: widget.getRectangle(),
       page: this._getWidgetPage(widget, pages),
     };
-  }
-
-  private async _embedImage(pdfDoc: PDFDocument, src: string) {
-    const response = await fetch(src);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
-    return isJpg ? pdfDoc.embedJpg(bytes) : pdfDoc.embedPng(bytes);
   }
 
   private _getWidgetPage(widget: ReturnType<PDFTextField["acroField"]["getWidgets"]>[0], pages: PDFPage[]) {
