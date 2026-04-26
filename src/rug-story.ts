@@ -1,7 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { PDFDocument, PDFName, PDFArray, PDFPage, PDFForm, rgb } from "pdf-lib";
-import type { PDFTextField } from "pdf-lib";
+import type { PDFTextField, PDFFont } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import dynamicFields from "./rugstorydynamicinfo.json";
 
@@ -45,9 +45,12 @@ export interface MaterialsEntry {
 }
 
 export type FieldEntry = TextEntry | ImageEntry | Weavemasters | MaterialsEntry;
+
 const TEMPLATE_URL = "./rugstorytemplate1.pdf";
 const FONT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Regular.ttf";
 const FONT_LIGHT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Light.ttf";
+const DARK_COLOR = rgb(46 / 255, 46 / 255, 45 / 255);
+const DARK_DA = `${(46 / 255).toFixed(4)} ${(46 / 255).toFixed(4)} ${(45 / 255).toFixed(4)} rg`;
 
 @customElement("rug-story")
 export class RugStory extends LitElement {
@@ -124,9 +127,9 @@ export class RugStory extends LitElement {
   }
 
   // ── Field handlers
-  private _fillTextField(form: PDFForm, entry: TextEntry, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
+  private _fillTextField(form: PDFForm, entry: TextEntry, font: PDFFont) {
     const field = form.getTextField(entry.fieldName);
-    field.acroField.setDefaultAppearance(`${(46 / 255).toFixed(4)} ${(46 / 255).toFixed(4)} ${(45 / 255).toFixed(4)} rg /Helv 0 Tf`);
+    field.acroField.setDefaultAppearance(`${DARK_DA} /Helv 0 Tf`);
     field.setText(entry.value);
     field.updateAppearances(font);
   }
@@ -134,9 +137,7 @@ export class RugStory extends LitElement {
   private async _fillImageField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: ImageEntry, imgBytes: ArrayBuffer) {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
 
-    const bytes = new Uint8Array(imgBytes);
-    const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
-    const embedded = isJpg ? await pdfDoc.embedJpg(bytes) : await pdfDoc.embedPng(bytes);
+    const embedded = await this._embedImage(pdfDoc, new Uint8Array(imgBytes));
     this._removeField(pdfDoc, form, field, page);
 
     page.drawImage(embedded, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
@@ -184,7 +185,7 @@ export class RugStory extends LitElement {
     }
   }
 
-  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
+  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry, font: PDFFont) {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
     this._removeField(pdfDoc, form, field, page);
 
@@ -253,7 +254,7 @@ export class RugStory extends LitElement {
       page.drawRectangle({ x, y, width: swatchSize, height: swatchSize, color: rgb(r, g, b) });
 
       const brightness = r * 0.299 + g * 0.587 + b * 0.114;
-      const textColor = brightness > brightnessThreshold ? rgb(46 / 255, 46 / 255, 45 / 255) : rgb(1, 1, 1);
+      const textColor = brightness > brightnessThreshold ? DARK_COLOR : rgb(1, 1, 1);
 
       // Kg text — top right
       const kgText = `${mat.kg} Kg`;
@@ -304,7 +305,6 @@ export class RugStory extends LitElement {
     const wmThinFont = await doc.embedFont(thinFontBytes);
     const form = doc.getForm();
 
-    const darkColor = rgb(46 / 255, 46 / 255, 45 / 255);
     const pages = doc.getPages();
 
     // Name + role: draw manually so role can be smaller
@@ -323,7 +323,7 @@ export class RugStory extends LitElement {
       y: baselineY,
       size: nameFontSize,
       font: wmFont,
-      color: darkColor,
+      color: DARK_COLOR,
     });
     namePage.drawText(`(${profile.role})`, {
       x: nameRect.x + nameWidth,
@@ -333,10 +333,8 @@ export class RugStory extends LitElement {
       color: rgb(0, 0, 0),
     });
 
-    // Description: smaller font
-    const descDA = `${(46 / 255).toFixed(4)} ${(46 / 255).toFixed(4)} ${(45 / 255).toFixed(4)} rg /Helv 6 Tf`;
     const descField = form.getTextField("Description");
-    descField.acroField.setDefaultAppearance(descDA);
+    descField.acroField.setDefaultAppearance(`${DARK_DA} /Helv 7 Tf`);
     descField.setFontSize(7);
     descField.enableMultiline();
     descField.setText(profile.description);
@@ -348,8 +346,7 @@ export class RugStory extends LitElement {
       const photoRect = photoWidgets[0].getRectangle();
       const photoPage = this._getWidgetPage(photoWidgets[0], pages);
 
-      const isJpg = imgBytes[0] === 0xff && imgBytes[1] === 0xd8;
-      const embedded = isJpg ? await doc.embedJpg(imgBytes) : await doc.embedPng(imgBytes);
+      const embedded = await this._embedImage(doc, imgBytes);
 
       const dims = this._fitImageInRect(embedded.width, embedded.height, photoRect);
       this._removeField(doc, form, photoField, photoPage);
@@ -386,6 +383,37 @@ export class RugStory extends LitElement {
       if (ref) page.node.removeAnnot(ref);
     });
     form.acroForm.removeField(field.acroField);
+  }
+
+  private async _embedImage(doc: PDFDocument, bytes: Uint8Array) {
+    const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+
+    if (isJpg) return doc.embedJpg(bytes);
+    if (isPng) return doc.embedPng(bytes);
+
+    // Convert any other browser-supported format (WebP, GIF, BMP, AVIF, etc.) to PNG via canvas
+    const blob = new Blob([bytes.buffer as ArrayBuffer]);
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("Unsupported image format"));
+        el.src = url;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext("2d")!.drawImage(img, 0, 0);
+      const pngBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas conversion failed"))), "image/png");
+      });
+      const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
+      return doc.embedPng(pngBytes);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 
   private _parseColor(color: string): { r: number; g: number; b: number } {
