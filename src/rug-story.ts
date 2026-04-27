@@ -15,6 +15,7 @@ export interface ImageEntry {
   type: "image";
   fieldName: string;
   src: string;
+  maintainAspectRatio?: boolean;
 }
 
 export interface Profile {
@@ -46,7 +47,7 @@ export interface MaterialsEntry {
 
 export type FieldEntry = TextEntry | ImageEntry | Weavemasters | MaterialsEntry;
 
-const TEMPLATE_URL = "./rugstorytemplate1.pdf";
+const TEMPLATE_URL = "./rugstorytemplate2.pdf";
 const FONT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Regular.ttf";
 const FONT_LIGHT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Light.ttf";
 const DARK_COLOR = rgb(46 / 255, 46 / 255, 45 / 255);
@@ -140,7 +141,10 @@ export class RugStory extends LitElement {
     const embedded = await this._embedImage(pdfDoc, new Uint8Array(imgBytes));
     this._removeField(pdfDoc, form, field, page);
 
-    page.drawImage(embedded, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+    const dims = entry.maintainAspectRatio
+      ? this._fitImageInRect(embedded.width, embedded.height, rect)
+      : { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    page.drawImage(embedded, dims);
 
     const contentsKey = PDFName.of("Contents");
     const contents = page.node.get(contentsKey);
@@ -159,26 +163,43 @@ export class RugStory extends LitElement {
     const weaverBytes = fetched.get(entry.templateUrl)!;
     const imageDataList = entry.profiles.map((p) => new Uint8Array(fetched.get(p.src)!));
 
+    const count = entry.profiles.length;
     const cardBounds = { x: 50, y: 420, width: 325, height: 80 };
     const sampleDoc = await PDFDocument.load(weaverBytes);
     const wpWidth = sampleDoc.getPage(0).getWidth();
     const wpHeight = sampleDoc.getPage(0).getHeight();
-    const scale = rect.width / cardBounds.width;
+    const cols = count > 4 ? 2 : 1;
+    const rows = Math.ceil(count / cols);
+
+    // Divide the allocated rect into a grid of cells with gap between rows/cols
+    const rowGap = 6;
+    const colGap = cols > 1 ? 18 : 0;
+    const cellWidth = (rect.width - (cols - 1) * colGap) / cols;
+    const cellHeight = (rect.height - (rows - 1) * rowGap) / rows;
+
+    // Scale uniformly based on width so card fills the allocated width
+    const scale = cellWidth / cardBounds.width;
+    const compensation = cols > 1 ? rect.width / cellWidth : 1;
     const scaledCardH = cardBounds.height * scale;
-    const gap = 4;
 
     // Generate all weavemaster pages in parallel
     const filledPages = await Promise.all(
-      entry.profiles.map((p, i) => this.generateWeavemasterPage(weaverBytes, p, imageDataList[i], fetched.get(FONT_URL)!, fetched.get(FONT_LIGHT_URL)!)),
+      entry.profiles.map((p, i) => this.generateWeavemasterPage(weaverBytes, p, imageDataList[i], fetched.get(FONT_URL)!, fetched.get(FONT_LIGHT_URL)!, compensation)),
     );
 
     for (let i = 0; i < filledPages.length; i++) {
       const [embeddedPage] = await pdfDoc.embedPdf(filledPages[i], [0]);
 
-      const cardY = rect.y + rect.height - (i + 1) * (scaledCardH + gap) + gap;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+
+      const cellX = rect.x + col * (cellWidth + colGap);
+      const cellY = rect.y + rect.height - (row + 1) * cellHeight;
+      const offsetY = (cellHeight - scaledCardH) / 2;
+
       page.drawPage(embeddedPage, {
-        x: rect.x - cardBounds.x * scale,
-        y: cardY - cardBounds.y * scale,
+        x: cellX - cardBounds.x * scale,
+        y: cellY + offsetY - cardBounds.y * scale,
         width: wpWidth * scale,
         height: wpHeight * scale,
       });
@@ -298,7 +319,7 @@ export class RugStory extends LitElement {
     }
   }
 
-  private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer) {
+  private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer, compensation = 1) {
     const doc = await PDFDocument.load(templateBytes);
     doc.registerFontkit(fontkit);
     const wmFont = await doc.embedFont(fontBytes);
@@ -314,44 +335,84 @@ export class RugStory extends LitElement {
     const namePage = this._getWidgetPage(nameWidgets[0], pages);
     this._removeField(doc, form, nameField, namePage);
 
-    const nameFontSize = 11;
-    const roleFontSize = 7;
+    const photoField = form.getTextField("Photo");
+    const photoWidgets = photoField.acroField.getWidgets();
+    const photoRect = photoWidgets.length ? photoWidgets[0].getRectangle() : null;
+    const photoPage = photoWidgets.length ? this._getWidgetPage(photoWidgets[0], pages) : namePage;
+
+    const isMultiCol = compensation > 1 && photoRect;
+    const imgScale = isMultiCol ? 1.4 : 1;
+
+    // Compute scaled photo rect (used for both photo drawing and text positioning)
+    const scaledPhotoRect = photoRect
+      ? {
+          x: photoRect.x - (photoRect.width * (imgScale - 1)) / 2,
+          y: photoRect.y - (photoRect.height * (imgScale - 1)) / 2,
+          width: photoRect.width * imgScale,
+          height: photoRect.height * imgScale,
+        }
+      : null;
+
+    // ── Photo
+    if (scaledPhotoRect) {
+      const embedded = await this._embedImage(doc, imgBytes);
+      const dims = this._fitImageInRect(embedded.width, embedded.height, scaledPhotoRect);
+      this._removeField(doc, form, photoField, photoPage);
+      photoPage.drawImage(embedded, dims);
+    }
+
+    // ── Name + Role
+    const nameFontSize = isMultiCol ? 20 : 11;
+    const roleFontSize = isMultiCol ? 13 : 7;
+
+    let textX: number;
+    let nameBaselineY: number;
+
+    if (isMultiCol && scaledPhotoRect) {
+      textX = scaledPhotoRect.x + scaledPhotoRect.width + 15;
+      const textTopY = scaledPhotoRect.y + scaledPhotoRect.height + 6;
+      nameBaselineY = textTopY - nameFontSize;
+    } else {
+      textX = nameRect.x;
+      nameBaselineY = nameRect.y + (nameRect.height - nameFontSize) / 2;
+    }
+
     const nameWidth = wmFont.widthOfTextAtSize(profile.name + " ", nameFontSize);
-    const baselineY = nameRect.y + (nameRect.height - nameFontSize) / 2;
     namePage.drawText(profile.name, {
-      x: nameRect.x,
-      y: baselineY,
+      x: textX,
+      y: nameBaselineY,
       size: nameFontSize,
       font: wmFont,
       color: DARK_COLOR,
     });
     namePage.drawText(`(${profile.role})`, {
-      x: nameRect.x + nameWidth,
-      y: baselineY,
+      x: textX + nameWidth,
+      y: nameBaselineY,
       size: roleFontSize,
       font: wmThinFont,
       color: rgb(0, 0, 0),
     });
 
+    // ── Description
+    const descFontSize = isMultiCol ? 10 : 7;
     const descField = form.getTextField("Description");
-    descField.acroField.setDefaultAppearance(`${DARK_DA} /Helv 7 Tf`);
-    descField.setFontSize(7);
+    if (isMultiCol) {
+      const descWidgets = descField.acroField.getWidgets();
+      const descRect = descWidgets[0].getRectangle();
+      const descTopY = nameBaselineY - 8;
+      const descHeight = descRect.height * compensation;
+      descWidgets[0].setRectangle({
+        x: textX,
+        y: descTopY - descHeight,
+        width: descRect.width,
+        height: descHeight,
+      });
+    }
+    descField.acroField.setDefaultAppearance(`${DARK_DA} /Helv ${descFontSize} Tf`);
+    descField.setFontSize(descFontSize);
     descField.enableMultiline();
     descField.setText(profile.description);
     descField.updateAppearances(wmFont);
-
-    const photoField = form.getTextField("Photo");
-    const photoWidgets = photoField.acroField.getWidgets();
-    if (photoWidgets.length) {
-      const photoRect = photoWidgets[0].getRectangle();
-      const photoPage = this._getWidgetPage(photoWidgets[0], pages);
-
-      const embedded = await this._embedImage(doc, imgBytes);
-
-      const dims = this._fitImageInRect(embedded.width, embedded.height, photoRect);
-      this._removeField(doc, form, photoField, photoPage);
-      photoPage.drawImage(embedded, dims);
-    }
 
     form.flatten();
     const savedBytes = await doc.save();

@@ -3,7 +3,8 @@
   {
     "type": "image",
     "fieldName": "p06image",
-    "src": "story_images/ito-tibetan-design-photorealistic.jpg"
+    "src": "story_images/ito-tibetan-design-photorealistic.jpg",
+    "maintainAspectRatio": true
   },
   {
     "type": "image",
@@ -18,7 +19,8 @@
   {
     "type": "image",
     "fieldName": "p09image",
-    "src": "story_images/dyeing-machine.png"
+    "src": "story_images/dyeing-machine.png",
+    "maintainAspectRatio": true
   },
   {
     "type": "image",
@@ -44,25 +46,31 @@
         "name": "Yadav Sunuwar",
         "role": "Master",
         "description": "Yadav Sunuwar is a master craftsman who leads the entire rug-making process with years of expertise and precision. He carefully oversees design execution, guides the weavers, and ensures each rug meets the highest standards of quality and craftsmanship.",
-        "src": "story_images/yadav-sunuwar-master.jpg"
+        "src": "story_images/weaver_1.jpg"
       },
       {
         "name": "Urmila Moktan",
         "role": "Weaver",
         "description": "Urmila Moktan is a skilled weaver who brings intricate patterns to life through careful hand-knotting techniques. Her patience and attention to detail ensures every rug carries beauty, balance, and durability.",
-        "src": "story_images/urmila-moktan.jpg"
+        "src": "story_images/weaver_2.jpg"
       },
       {
         "name": "Satyaman Moktan",
         "role": "Weaver",
         "description": "Satyaman Moktan is an experienced weaver dedicated to maintaining traditional rug-making techniques. His steady craftsmanship and consistency contribute to the strength and fine detailing of each piece.",
-        "src": "story_images/satyaman-moktan.jpg"
+        "src": "story_images/weaver_3.jpg"
       },
       {
         "name": "Jamjna Lama",
         "role": "Weaver",
         "description": "Jamjna Lama is a passionate weaver who transforms delicate designs into textured works of art on the loom. His deep commitment to precision and quality helps preserve the timeless authenticity of handmade rugs.",
-        "src": "story_images/jamjna-lama.jpg"
+        "src": "story_images/weaver_4.jpg"
+      },
+      {
+        "name": "Jamjna Lama",
+        "role": "Weaver",
+        "description": "Jamjna Lama is a passionate weaver who transforms delicate designs into textured works of art on the loom. His deep commitment to precision and quality helps preserve the timeless authenticity of handmade rugs.",
+        "src": "story_images/weaver_4.jpg"
       }
     ]
   },
@@ -91,6 +99,11 @@
     "fieldName": "p19image",
     "src": "story_images/stretching.png"
   },
+  {
+    "type": "image",
+    "fieldName": "p20image",
+    "src": "story_images/finishing.png"
+  },
   { "type": "text", "fieldName": "p22knots", "value": "120" },
   { "type": "text", "fieldName": "p22dqys", "value": "45" },
   { "type": "text", "fieldName": "p22weavers", "value": "3" },
@@ -99,6 +112,38 @@
     "type": "materials",
     "fieldName": "p22image",
     "materials": [
+      { "color": "#cfac64", "name": "Satin Gold", "material": "Wool", "kg": "3.69" },
+      { "color": "#14183a", "name": "Royal Blue", "material": "Wool", "kg": "3.69" },
+      { "color": "#69789c", "name": "Gentian Blue", "material": "Wool", "kg": "1.15" },
+      { "color": "#ac792b", "name": "Aurulent Brown", "material": "Wool", "kg": "1.09" },
+      { "color": "#faf9df", "name": "Off White", "material": "Wool", "kg": "0.91" },
+      { "color": "#475928", "name": "Fern Green", "material": "Wool", "kg": "0.74" },
+      { "color": "#7f4029", "name": "Chocolate", "material": "Wool", "kg": "0.55" },
+      { "color": "#5d8ca5", "name": "Hoki", "material": "Silk", "kg": "0.46" },
+      { "color": "#b1c6cd", "name": "Pastel Blue", "material": "Silk", "kg": "0.40" },
+      { "color": "#5d161f", "name": "Burgundy", "material": "Wool", "kg": "0.27" },
+      { "color": "#a69364", "name": "Canvas", "material": "Wool", "kg": "0.22" },
+      { "color": "#3e413a", "name": "Granite Dark Green", "material": "Wool", "kg": "0.19" },
+      { "color": "#dcad81", "name": "Vintage Beige", "material": "Wool", "kg": "0.14" },
+      { "color": "#201917", "name": "Graphite", "material": "Wool", "kg": "0.11" },
+      { "color": "#5f431c", "name": "Otter Brown", "material": "Wool", "kg": "0.06" },
+
+      { "color": "#cfac64", "name": "Satin Gold", "material": "Wool", "kg": "3.69" },
+      { "color": "#14183a", "name": "Royal Blue", "material": "Wool", "kg": "3.69" },
+      { "color": "#69789c", "name": "Gentian Blue", "material": "Wool", "kg": "1.15" },
+      { "color": "#ac792b", "name": "Aurulent Brown", "material": "Wool", "kg": "1.09" },
+      { "color": "#faf9df", "name": "Off White", "material": "Wool", "kg": "0.91" },
+      { "color": "#475928", "name": "Fern Green", "material": "Wool", "kg": "0.74" },
+      { "color": "#7f4029", "name": "Chocolate", "material": "Wool", "kg": "0.55" },
+      { "color": "#5d8ca5", "name": "Hoki", "material": "Silk", "kg": "0.46" },
+      { "color": "#b1c6cd", "name": "Pastel Blue", "material": "Silk", "kg": "0.40" },
+      { "color": "#5d161f", "name": "Burgundy", "material": "Wool", "kg": "0.27" },
+      { "color": "#a69364", "name": "Canvas", "material": "Wool", "kg": "0.22" },
+      { "color": "#3e413a", "name": "Granite Dark Green", "material": "Wool", "kg": "0.19" },
+      { "color": "#dcad81", "name": "Vintage Beige", "material": "Wool", "kg": "0.14" },
+      { "color": "#201917", "name": "Graphite", "material": "Wool", "kg": "0.11" },
+      { "color": "#5f431c", "name": "Otter Brown", "material": "Wool", "kg": "0.06" },
+
       { "color": "#cfac64", "name": "Satin Gold", "material": "Wool", "kg": "3.69" },
       { "color": "#14183a", "name": "Royal Blue", "material": "Wool", "kg": "3.69" },
       { "color": "#69789c", "name": "Gentian Blue", "material": "Wool", "kg": "1.15" },
