@@ -39,14 +39,30 @@ export interface Material {
   kg: string;
 }
 
+export interface DesignInfo {
+  physicalWidth: number;
+  physicalHeight: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  kpu: number;
+  lpu: number;
+  eachCutsCount: number[];
+  eachKnotCount: number[];
+  colorsUsed: string[];
+  materials: string[];
+  unit: string;
+}
+
 export interface MaterialsEntry {
   type: "materials";
   fieldName: string;
-  materials: Material[];
+  designInfo?: DesignInfo;
+  materials?: Material[];
 }
 
 export type FieldEntry = TextEntry | ImageEntry | Weavemasters | MaterialsEntry;
 
+const COLOR_BANK_URL = "./ColorBank.json";
 const TEMPLATE_URL = "./rugstorytemplate2.pdf";
 const FONT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Regular.ttf";
 const FONT_LIGHT_URL = "./fonts/fonts/fonnts.com-AcuminPro-Light.ttf";
@@ -72,7 +88,7 @@ export class RugStory extends LitElement {
 
   render() {
     if (!this._pdfObjectUrl) return html``;
-    return html`<iframe .src=${this._pdfObjectUrl}></iframe>`;
+    return html`<iframe .src=${this._pdfObjectUrl + `#toolbar=0&view=Fit100%`}></iframe>`;
   }
 
   private async generateRugStory() {
@@ -97,12 +113,35 @@ export class RugStory extends LitElement {
         ),
       );
 
+      const colorBankRes = await fetch(COLOR_BANK_URL);
+      const colorBankData = await colorBankRes.json() as { ColorRows: { R: number; G: number; B: number; ColorName: string }[] }[];
+      const colorBank = new Map<string, string>();
+      for (const group of colorBankData) {
+        for (const row of group.ColorRows) {
+          colorBank.set(`${row.R},${row.G},${row.B}`, row.ColorName);
+        }
+      }
+
       const templateBytes = fetched.get(TEMPLATE_URL)!;
       const pdfDoc = await PDFDocument.load(templateBytes);
       pdfDoc.registerFontkit(fontkit);
       const font = await pdfDoc.embedFont(fetched.get(FONT_URL)!);
       const form = pdfDoc.getForm();
       const pages = pdfDoc.getPages();
+
+      // Auto-fill calculated fields from designInfo
+      const materialsEntry = this.fields.find((e): e is MaterialsEntry => e.type === "materials" && !!e.designInfo);
+      if (materialsEntry?.designInfo) {
+        const di = materialsEntry.designInfo;
+        const totalKnots = di.eachKnotCount.reduce((sum, k) => sum + k, 0);
+        const sqm = (di.physicalWidth / 100) * (di.physicalHeight / 100);
+        const weightPerSqm = 4;
+        const totalConsumption = sqm * weightPerSqm;
+
+        this._fillTextField(form, { type: "text", fieldName: "p22knots", value: totalKnots.toLocaleString() }, font, 14);
+        this._fillTextField(form, { type: "text", fieldName: "p22weight", value: `${totalConsumption.toFixed(2)} Kgs` }, font, 14);
+        this._fillTextField(form, { type: "text", fieldName: "Text3", value: `${Math.floor(di.physicalWidth)} x ${Math.floor(di.physicalHeight)} ${di.unit}` }, font, 14);
+      }
 
       for (const entry of this.fields) {
         try {
@@ -113,7 +152,7 @@ export class RugStory extends LitElement {
           } else if (entry.type === "profiles") {
             await this._fillProfilesField(pdfDoc, form, pages, entry, fetched);
           } else if (entry.type === "materials") {
-            await this._fillMaterialsField(pdfDoc, form, pages, entry, font);
+            await this._fillMaterialsField(pdfDoc, form, pages, entry, font, colorBank);
           }
         } catch (fieldErr) {
           console.error(`Failed to process field "${(entry as { fieldName: string }).fieldName}":`, fieldErr);
@@ -128,9 +167,9 @@ export class RugStory extends LitElement {
   }
 
   // ── Field handlers
-  private _fillTextField(form: PDFForm, entry: TextEntry, font: PDFFont) {
+  private _fillTextField(form: PDFForm, entry: TextEntry, font: PDFFont, fontSize = 0) {
     const field = form.getTextField(entry.fieldName);
-    field.acroField.setDefaultAppearance(`${DARK_DA} /Helv 0 Tf`);
+    field.acroField.setDefaultAppearance(`${DARK_DA} /Helv ${fontSize} Tf`);
     field.setText(entry.value);
     field.updateAppearances(font);
   }
@@ -206,15 +245,17 @@ export class RugStory extends LitElement {
     }
   }
 
-  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry, font: PDFFont) {
+  private async _fillMaterialsField(pdfDoc: PDFDocument, form: PDFForm, pages: PDFPage[], entry: MaterialsEntry, font: PDFFont, colorBank: Map<string, string>) {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
     this._removeField(pdfDoc, form, field, page);
+
+    const materials = entry.materials ?? this._calculateMaterials(entry.designInfo!, colorBank);
 
     // Find the largest swatch size that fits, starting from default
     const defaultSwatch = 57;
     const colGap = 8;
     const rowGap = 10;
-    const count = entry.materials.length;
+    const count = materials.length;
 
     let swatchSize = defaultSwatch;
     let cols = 1;
@@ -264,8 +305,8 @@ export class RugStory extends LitElement {
       return lines;
     };
 
-    for (let i = 0; i < entry.materials.length; i++) {
-      const mat = entry.materials[i];
+    for (let i = 0; i < materials.length; i++) {
+      const mat = materials[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
       const x = rect.x + col * (swatchSize + colGap);
@@ -317,6 +358,37 @@ export class RugStory extends LitElement {
         });
       }
     }
+  }
+
+  private _calculateMaterials(designInfo: DesignInfo, colorBank: Map<string, string>): Material[] {
+    const totalKnots = designInfo.eachKnotCount.reduce((s, k) => s + k, 0);
+    const totalCuts = designInfo.eachCutsCount.reduce((s, c) => s + c, 0);
+    const sqm = (designInfo.physicalWidth / 100) * (designInfo.physicalHeight / 100);
+    const weightPerSqm = 4; //default
+    const totalConsumption = sqm * weightPerSqm;
+    const wastagePerSqm = weightPerSqm * (totalCuts / totalKnots);
+    const totalCutWastage = sqm * wastagePerSqm;
+
+    return designInfo.colorsUsed.map((csv, i) => {
+      const [rv, gv, bv] = csv.split(",").map((v) => parseInt(v.trim()));
+      const key = `${rv},${gv},${bv}`;
+      const rp = Math.trunc((100 * rv) / 256);
+      const gp = Math.trunc((100 * gv) / 256);
+      const bp = Math.trunc((100 * bv) / 256);
+      const name = colorBank.get(key) ?? `R${rp.toString().padStart(2, "0")} G${gp.toString().padStart(2, "0")} B${bp.toString().padStart(2, "0")}`;
+      const materialType = designInfo.materials[i].match(/^[A-Z][a-z]*/)?.[0] ?? "Wool";
+
+      const consumption = totalConsumption * (designInfo.eachKnotCount[i] / totalKnots);
+      const wastage = totalCutWastage * (designInfo.eachCutsCount[i] / totalCuts);
+      const kg = (consumption + wastage).toFixed(2);
+
+      return {
+        color: `#${rv.toString(16).padStart(2, "0")}${gv.toString(16).padStart(2, "0")}${bv.toString(16).padStart(2, "0")}`,
+        name,
+        material: materialType,
+        kg,
+      };
+    });
   }
 
   private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer, compensation = 1) {
@@ -515,7 +587,6 @@ export class RugStory extends LitElement {
       this._pdfObjectUrl = "";
     }
   }
-
   static styles = css`
     :host {
       display: block;

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Template PDF
+public/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
