@@ -37,6 +37,8 @@ export interface Material {
   name: string;
   material: string;
   kg: string;
+  consumption: string;
+  cutWastage: string;
 }
 
 export interface DesignInfo {
@@ -51,6 +53,7 @@ export interface DesignInfo {
   colorsUsed: string[];
   materials: string[];
   unit: string;
+  pileHeight?: number;
 }
 
 export interface MaterialsEntry {
@@ -363,10 +366,13 @@ export class RugStory extends LitElement {
   private _calculateMaterials(designInfo: DesignInfo, colorBank: Map<string, string>): Material[] {
     const totalKnots = designInfo.eachKnotCount.reduce((s, k) => s + k, 0);
     const totalCuts = designInfo.eachCutsCount.reduce((s, c) => s + c, 0);
-    const sqm = (designInfo.physicalWidth / 100) * (designInfo.physicalHeight / 100);
+    const toCm = designInfo.unit === "inch" ? 2.54 : designInfo.unit === "ft" ? 30.48 : 1;
+    const sqm = ((designInfo.physicalWidth * toCm) / 100) * ((designInfo.physicalHeight * toCm) / 100);
     const weightPerSqm = 4; //default
     const totalConsumption = sqm * weightPerSqm;
-    const wastagePerSqm = weightPerSqm * (totalCuts / totalKnots);
+    const pileHeight = designInfo.pileHeight ?? 5; // 5 default
+    const ratio = totalCuts / totalKnots;
+    const wastagePerSqm = weightPerSqm * ratio * (7.5 / pileHeight + 1.5);
     const totalCutWastage = sqm * wastagePerSqm;
 
     return designInfo.colorsUsed.map((csv, i) => {
@@ -380,13 +386,15 @@ export class RugStory extends LitElement {
 
       const consumption = totalConsumption * (designInfo.eachKnotCount[i] / totalKnots);
       const wastage = totalCutWastage * (designInfo.eachCutsCount[i] / totalCuts);
-      const kg = (consumption + wastage).toFixed(2);
+      const total = consumption + wastage;
 
       return {
         color: `#${rv.toString(16).padStart(2, "0")}${gv.toString(16).padStart(2, "0")}${bv.toString(16).padStart(2, "0")}`,
         name,
         material: materialType,
-        kg,
+        kg: total.toFixed(2),
+        consumption: consumption.toFixed(2),
+        cutWastage: wastage.toFixed(2),
       };
     });
   }
