@@ -136,10 +136,8 @@ export class RugStory extends LitElement {
       const materialsEntry = this.fields.find((e): e is MaterialsEntry => e.type === "materials" && !!e.designInfo);
       if (materialsEntry?.designInfo) {
         const di = materialsEntry.designInfo;
-        const totalKnots = di.eachKnotCount.reduce((sum, k) => sum + k, 0);
-        const sqm = (di.physicalWidth / 100) * (di.physicalHeight / 100);
-        const weightPerSqm = 4;
-        const totalConsumption = sqm * weightPerSqm;
+        const { materials, totalConsumption, totalKnots } = this._calculateMaterials(di, colorBank);
+        materialsEntry.materials = materials; // cache so _fillMaterialsField skips recompute
 
         this._fillTextField(form, { type: "text", fieldName: "p22knots", value: totalKnots.toLocaleString() }, font, 14);
         this._fillTextField(form, { type: "text", fieldName: "p22weight", value: `${totalConsumption.toFixed(2)} Kgs` }, font, 14);
@@ -252,7 +250,7 @@ export class RugStory extends LitElement {
     const { field, rect, page } = this._resolveField(form, pages, entry.fieldName);
     this._removeField(pdfDoc, form, field, page);
 
-    const materials = entry.materials ?? this._calculateMaterials(entry.designInfo!, colorBank);
+    const materials = entry.materials ?? this._calculateMaterials(entry.designInfo!, colorBank).materials;
 
     // Find the largest swatch size that fits, starting from default
     const defaultSwatch = 57;
@@ -363,19 +361,22 @@ export class RugStory extends LitElement {
     }
   }
 
-  private _calculateMaterials(designInfo: DesignInfo, colorBank: Map<string, string>): Material[] {
+  private _calculateMaterials(designInfo: DesignInfo, colorBank: Map<string, string>): { materials: Material[]; totalConsumption: number; totalKnots: number } {
     const totalKnots = designInfo.eachKnotCount.reduce((s, k) => s + k, 0);
     const totalCuts = designInfo.eachCutsCount.reduce((s, c) => s + c, 0);
     const toCm = designInfo.unit === "inch" ? 2.54 : designInfo.unit === "ft" ? 30.48 : 1;
-    const sqm = ((designInfo.physicalWidth * toCm) / 100) * ((designInfo.physicalHeight * toCm) / 100);
+    const widthCm = parseFloat((designInfo.physicalWidth * toCm).toFixed(4));
+    const heightCm = parseFloat((designInfo.physicalHeight * toCm).toFixed(4));
+    const sqm = (widthCm / 100) * (heightCm / 100);
     const weightPerSqm = 4; //default
-    const totalConsumption = sqm * weightPerSqm;
+    const totalConsumption = parseFloat((sqm * weightPerSqm).toFixed(2));
     const pileHeight = designInfo.pileHeight ?? 5; // 5 default
     const ratio = totalCuts / totalKnots;
-    const wastagePerSqm = weightPerSqm * ratio * (7.5 / pileHeight + 1.5);
+    const wastagePerSqm = parseFloat((weightPerSqm * ratio * (7.5 / pileHeight + 1.5)).toFixed(2));
+    console.log(wastagePerSqm);
     const totalCutWastage = sqm * wastagePerSqm;
 
-    return designInfo.colorsUsed.map((csv, i) => {
+    const materials = designInfo.colorsUsed.map((csv, i) => {
       const [rv, gv, bv] = csv.split(",").map((v) => parseInt(v.trim()));
       const key = `${rv},${gv},${bv}`;
       const rp = Math.trunc((100 * rv) / 256);
@@ -384,8 +385,9 @@ export class RugStory extends LitElement {
       const name = colorBank.get(key) ?? `R${rp.toString().padStart(2, "0")} G${gp.toString().padStart(2, "0")} B${bp.toString().padStart(2, "0")}`;
       const materialType = designInfo.materials[i].match(/^[A-Z][a-z]*/)?.[0] ?? "Wool";
 
-      const consumption = totalConsumption * (designInfo.eachKnotCount[i] / totalKnots);
-      const wastage = totalCutWastage * (designInfo.eachCutsCount[i] / totalCuts);
+      const consumption = parseFloat((totalConsumption * (designInfo.eachKnotCount[i] / totalKnots)).toFixed(2));
+      const wastage = parseFloat((totalCutWastage * (designInfo.eachCutsCount[i] / totalCuts)).toFixed(2));
+      console.log(consumption, wastage);
       const total = consumption + wastage;
 
       return {
@@ -397,6 +399,7 @@ export class RugStory extends LitElement {
         cutWastage: wastage.toFixed(2),
       };
     });
+    return { materials, totalConsumption, totalKnots };
   }
 
   private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer, compensation = 1) {
