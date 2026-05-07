@@ -55,22 +55,52 @@
         "src": "story_images/weaver_2.jpg"
       },
       {
-        "name": "Satyaman Moktan",
-        "role": "Weaver",
-        "description": "Satyaman Moktan is an experienced weaver dedicated to maintaining traditional rug-making techniques. His steady craftsmanship and consistency contribute to the strength and fine detailing of each piece.",
-        "src": "story_images/weaver_3.jpg"
+        "name": "Yadav Sunuwar",
+        "role": "Master",
+        "description": "Yadav Sunuwar is a master craftsman who leads the entire rug-making process with years of expertise and precision. He carefully oversees design execution, guides the weavers, and ensures each rug meets the highest standards of quality and craftsmanship.",
+        "src": "story_images/weaver_1.jpg"
       },
       {
-        "name": "Jamjna Lama",
+        "name": "Urmila Moktan",
         "role": "Weaver",
-        "description": "Jamjna Lama is a passionate weaver who transforms delicate designs into textured works of art on the loom. His deep commitment to precision and quality helps preserve the timeless authenticity of handmade rugs.",
-        "src": "story_images/weaver_4.jpg"
+        "description": "Urmila Moktan is a skilled weaver who brings intricate patterns to life through careful hand-knotting techniques. Her patience and attention to detail ensures every rug carries beauty, balance, and durability.",
+        "src": "story_images/weaver_2.jpg"
       },
       {
-        "name": "Jamjna Lama",
+        "name": "Yadav Sunuwar",
+        "role": "Master",
+        "description": "Yadav Sunuwar is a master craftsman who leads the entire rug-making process with years of expertise and precision. He carefully oversees design execution, guides the weavers, and ensures each rug meets the highest standards of quality and craftsmanship.",
+        "src": "story_images/weaver_1.jpg"
+      },
+      {
+        "name": "Urmila Moktan",
         "role": "Weaver",
-        "description": "Jamjna Lama is a passionate weaver who transforms delicate designs into textured works of art on the loom. His deep commitment to precision and quality helps preserve the timeless authenticity of handmade rugs.",
-        "src": "story_images/weaver_4.jpg"
+        "description": "Urmila Moktan is a skilled weaver who brings intricate patterns to life through careful hand-knotting techniques. Her patience and attention to detail ensures every rug carries beauty, balance, and durability.",
+        "src": "story_images/weaver_2.jpg"
+      },
+      {
+        "name": "Yadav Sunuwar",
+        "role": "Master",
+        "description": "Yadav Sunuwar is a master craftsman who leads the entire rug-making process with years of expertise and precision. He carefully oversees design execution, guides the weavers, and ensures each rug meets the highest standards of quality and craftsmanship.",
+        "src": "story_images/weaver_1.jpg"
+      },
+      {
+        "name": "Urmila Moktan",
+        "role": "Weaver",
+        "description": "Urmila Moktan is a skilled weaver who brings intricate patterns to life through careful hand-knotting techniques. Her patience and attention to detail ensures every rug carries beauty, balance, and durability.",
+        "src": "story_images/weaver_2.jpg"
+      },
+      {
+        "name": "Yadav Sunuwar",
+        "role": "Master",
+        "description": "Yadav Sunuwar is a master craftsman who leads the entire rug-making process with years of expertise and precision. He carefully oversees design execution, guides the weavers, and ensures each rug meets the highest standards of quality and craftsmanship.",
+        "src": "story_images/weaver_1.jpg"
+      },
+      {
+        "name": "Urmila Moktan",
+        "role": "Weaver",
+        "description": "Urmila Moktan is a skilled weaver who brings intricate patterns to life through careful hand-knotting techniques. Her patience and attention to detail ensures every rug carries beauty, balance, and durability.",
+        "src": "story_images/weaver_2.jpg"
       }
     ]
   },

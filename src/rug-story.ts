@@ -91,7 +91,7 @@ export class RugStory extends LitElement {
 
   render() {
     if (!this._pdfObjectUrl) return html``;
-    return html`<iframe .src=${this._pdfObjectUrl + `#toolbar=0&view=Fit100%`}></iframe>`;
+    return html`<iframe .src=${this._pdfObjectUrl}></iframe>`;
   }
 
   private async generateRugStory() {
@@ -204,7 +204,7 @@ export class RugStory extends LitElement {
     const imageDataList = entry.profiles.map((p) => new Uint8Array(fetched.get(p.src)!));
 
     const count = entry.profiles.length;
-    const cardBounds = { x: 50, y: 420, width: 325, height: 80 };
+    const cardBounds = { x: 50, y: 420, width: 325, height: count <= 2 ? 120 : 80 };
     const sampleDoc = await PDFDocument.load(weaverBytes);
     const wpWidth = sampleDoc.getPage(0).getWidth();
     const wpHeight = sampleDoc.getPage(0).getHeight();
@@ -212,7 +212,7 @@ export class RugStory extends LitElement {
     const rows = Math.ceil(count / cols);
 
     // Divide the allocated rect into a grid of cells with gap between rows/cols
-    const rowGap = 6;
+    const rowGap = count <= 2 ? 12 : 6;
     const colGap = cols > 1 ? 18 : 0;
     const cellWidth = (rect.width - (cols - 1) * colGap) / cols;
     const cellHeight = (rect.height - (rows - 1) * rowGap) / rows;
@@ -224,7 +224,7 @@ export class RugStory extends LitElement {
 
     // Generate all weavemaster pages in parallel
     const filledPages = await Promise.all(
-      entry.profiles.map((p, i) => this.generateWeavemasterPage(weaverBytes, p, imageDataList[i], fetched.get(FONT_URL)!, fetched.get(FONT_LIGHT_URL)!, compensation)),
+      entry.profiles.map((p, i) => this.generateWeavemasterPage(weaverBytes, p, imageDataList[i], fetched.get(FONT_URL)!, fetched.get(FONT_LIGHT_URL)!, compensation, count)),
     );
 
     for (let i = 0; i < filledPages.length; i++) {
@@ -235,7 +235,8 @@ export class RugStory extends LitElement {
 
       const cellX = rect.x + col * (cellWidth + colGap);
       const cellY = rect.y + rect.height - (row + 1) * cellHeight;
-      const offsetY = (cellHeight - scaledCardH) / 2;
+      // const offsetY = (cellHeight - scaledCardH) / 2;
+      const offsetY = count <= 2 ? cellHeight - scaledCardH : (cellHeight - scaledCardH) / 2;
 
       page.drawPage(embeddedPage, {
         x: cellX - cardBounds.x * scale,
@@ -402,7 +403,7 @@ export class RugStory extends LitElement {
     return { materials, totalConsumption, totalKnots };
   }
 
-  private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer, compensation = 1) {
+  private async generateWeavemasterPage(templateBytes: ArrayBuffer, profile: Profile, imgBytes: Uint8Array, fontBytes: ArrayBuffer, thinFontBytes: ArrayBuffer, compensation = 1, profileCount = 3) {
     const doc = await PDFDocument.load(templateBytes);
     doc.registerFontkit(fontkit);
     const wmFont = await doc.embedFont(fontBytes);
@@ -424,7 +425,8 @@ export class RugStory extends LitElement {
     const photoPage = photoWidgets.length ? this._getWidgetPage(photoWidgets[0], pages) : namePage;
 
     const isMultiCol = compensation > 1 && photoRect;
-    const imgScale = isMultiCol ? 1.4 : 1;
+    const isFewProfiles = profileCount <= 2 && !isMultiCol;
+    const imgScale = isMultiCol ? 1.4 : isFewProfiles ? 1.3 : 1;
 
     // Compute scaled photo rect (used for both photo drawing and text positioning)
     const scaledPhotoRect = photoRect
@@ -445,8 +447,8 @@ export class RugStory extends LitElement {
     }
 
     // ── Name + Role
-    const nameFontSize = isMultiCol ? 20 : 11;
-    const roleFontSize = isMultiCol ? 13 : 7;
+    const nameFontSize = isMultiCol ? 22 : isFewProfiles ? 14 : 11;
+    const roleFontSize = isMultiCol ? 14 : isFewProfiles ? 9 : 7;
 
     let textX: number;
     let nameBaselineY: number;
@@ -455,6 +457,9 @@ export class RugStory extends LitElement {
       textX = scaledPhotoRect.x + scaledPhotoRect.width + 15;
       const textTopY = scaledPhotoRect.y + scaledPhotoRect.height + 6;
       nameBaselineY = textTopY - nameFontSize;
+    } else if (isFewProfiles && scaledPhotoRect) {
+      textX = scaledPhotoRect.x + scaledPhotoRect.width + 12;
+      nameBaselineY = scaledPhotoRect.y + scaledPhotoRect.height - nameFontSize;
     } else {
       textX = nameRect.x;
       nameBaselineY = nameRect.y + (nameRect.height - nameFontSize) / 2;
@@ -477,13 +482,13 @@ export class RugStory extends LitElement {
     });
 
     // ── Description
-    const descFontSize = isMultiCol ? 10 : 7;
+    const descFontSize = isMultiCol ? 12 : isFewProfiles ? 9 : 7;
     const descField = form.getTextField("Description");
-    if (isMultiCol) {
+    if (isMultiCol || isFewProfiles) {
       const descWidgets = descField.acroField.getWidgets();
       const descRect = descWidgets[0].getRectangle();
       const descTopY = nameBaselineY - 8;
-      const descHeight = descRect.height * compensation;
+      const descHeight = isMultiCol ? descRect.height * compensation : descRect.height * 1.4;
       descWidgets[0].setRectangle({
         x: textX,
         y: descTopY - descHeight,
